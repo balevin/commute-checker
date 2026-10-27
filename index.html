@@ -106,7 +106,7 @@ button:focus-visible, .row:focus-visible { outline: 3px solid var(--fm); outline
   </section>
 
   <div class="eyebrow">Manhattan-bound L trains · tap the one you're on</div>
-  <p class="hint">~ marks a Bedford time estimated from the Union Sq arrival, used when the page wasn't open as the train left.</p>
+  <p class="hint">~ marks a Bedford time estimated from the train's next stop, used when the page wasn't open as the train left.</p>
   <div class="list" id="list"></div>
 
   <div class="meta">
@@ -132,7 +132,10 @@ const WALK = {
   toFm: 1.5 * MIN, toBway: 2.5 * MIN, fromBryantPk: 3 * MIN, fromTimesSq: 5.5 * MIN,
 };
 // Used only when a feed omits the downstream stop.
-const TYPICAL_RIDE = { bedfordToUnionSq: 5.8 * MIN, unionSqTo6Av: 1.6 * MIN, fm14ToBryantPk: 4.9 * MIN, bway14ToTimesSq: 5.1 * MIN };
+const TYPICAL_RIDE = { unionSqTo6Av: 1.6 * MIN, fm14ToBryantPk: 4.9 * MIN, bway14ToTimesSq: 5.1 * MIN };
+// Median run time from Bedford to each later stop, morning weekdays Sep-Oct 2026.
+// Ordered nearest first: a departed train's next stop gives the tightest estimate.
+const FROM_BEDFORD = [["L06N", 3.28 * MIN], ["L05N", 4.06 * MIN], ["L03N", 5.77 * MIN]];
 const PAST_SHOWN = 2;
 const FUTURE_SHOWN = 3;
 // The feed drops a stop once the train passes it, so remember Bedford times we have seen.
@@ -228,7 +231,8 @@ function bedfordTime(lTrip, usq) {
   const seen = seenBedford[lTrip.id];
   const [lo, hi] = PLAUSIBLE_BEDFORD_TO_USQ;
   if (seen && usq - seen >= lo && usq - seen <= hi) return { at: seen, estimated: false };
-  return { at: usq - TYPICAL_RIDE.bedfordToUnionSq, estimated: true };
+  const [stop, runTime] = FROM_BEDFORD.find(([s]) => lTrip.stops[s]);
+  return { at: lTrip.stops[stop].arr - runTime, estimated: true };
 }
 
 function planFor(lTrip, fmTrips, bwayTrips) {
