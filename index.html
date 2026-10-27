@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="F/M or Bway">
+<meta name="theme-color" content="#f3f4f2">
+<title>F/M or Broadway?</title>
+<style>
+/* Layout: one column, phone first. Verdict on top, then one row per upcoming L. */
+:root {
+  --bg: #f3f4f2;
+  --card: #ffffff;
+  --ink: #141515;
+  --muted: #5d6163;
+  --rule: #d9dcda;
+  --good: #0f7a3d;
+  --warn: #9a5b00;
+  --l: #a7a9ac;
+  --fm: #ff6319;
+  --nqrw: #fccc0a;
+  --font: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111213; --card: #1c1e1f; --ink: #eef0ee; --muted: #a3a8aa; --rule: #34383a; --good: #4cc27e; --warn: #f0b04a; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font: 16px/1.4 var(--font);
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-text-size-adjust: 100%;
+}
+main { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.top h1 { font-size: 15px; font-weight: 700; margin: 0; letter-spacing: 0.02em; }
+button {
+  font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 10px; padding: 8px 14px; cursor: pointer;
+}
+button:focus-visible, .row:focus-visible { outline: 3px solid var(--fm); outline-offset: 2px; }
+.verdict { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.call { font-size: 30px; font-weight: 700; line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; margin: 0; }
+.why { color: var(--muted); margin: 0; }
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.opt { border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.opt.win { border: 2px solid var(--ink); padding: 9px 11px; }
+.opt .lobby { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.opt .detail { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bullets { display: flex; gap: 3px; flex-wrap: wrap; }
+.b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 13px; font-weight: 700; line-height: 1; }
+.b.L { background: var(--l); color: #fff; }
+.b.F, .b.M { background: var(--fm); color: #fff; }
+.b.N, .b.Q, .b.R, .b.W { background: var(--nqrw); color: #141515; }
+.list { display: flex; flex-direction: column; gap: 6px; }
+.row {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px;
+  cursor: pointer; text-align: left; width: 100%; font-weight: 400;
+}
+.row.sel { border: 2px solid var(--ink); padding: 9px 11px; }
+.row .t { font-variant-numeric: tabular-nums; font-size: 15px; }
+.row .t small { display: block; color: var(--muted); font-size: 12px; }
+.pick { font-size: 13px; font-weight: 700; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.meta { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.err { color: var(--warn); font-weight: 600; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+@media (prefers-reduced-motion: no-preference) { .verdict { transition: opacity 0.2s; } }
+.loading .verdict { opacity: 0.6; }
+</style>
+</head>
+<body>
+<main id="app">
+  <div class="top">
+    <h1><span class="b L">L</span> to 42 St &amp; 6 Av</h1>
+    <button id="refresh" type="button">Refresh</button>
+  </div>
+
+  <section class="verdict" id="verdict" aria-live="polite">
+    <div class="eyebrow" id="verdict-train">Loading live trains…</div>
+    <p class="call" id="verdict-call">Checking the countdowns</p>
+    <p class="why" id="verdict-why">Reading the L, F/M and N/Q/R/W feeds.</p>
+    <div class="compare" id="compare" hidden>
+      <div class="opt" id="opt-bway">
+        <div class="eyebrow">Off at Union Sq</div>
+        <div class="bullets"><span class="b N">N</span><span class="b Q">Q</span><span class="b R">R</span><span class="b W">W</span></div>
+        <div class="lobby" id="bway-lobby">–</div>
+        <div class="detail" id="bway-detail"></div>
+      </div>
+      <div class="opt" id="opt-fm">
+        <div class="eyebrow">On to 6 Av</div>
+        <div class="bullets"><span class="b F">F</span><span class="b M">M</span></div>
+        <div class="lobby" id="fm-lobby">–</div>
+        <div class="detail" id="fm-detail"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="eyebrow">Manhattan-bound L trains · tap the one you're on</div>
+  <div class="list" id="list"></div>
+
+  <div class="meta">
+    <span id="stamp"></span>
+    <span>Lobby times include the walks: stairs to the F/M 1.5 min, to the N/Q/R/W 2.5 min, Bryant Pk exit 3 min, Times Sq exit and walk 5.5 min.</span>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+const FEEDS = {
+  l: "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",
+  bdfm: "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm",
+  nqrw: "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw",
+};
+const STOP = {
+  bedford: "L08N", unionSqL: "L03N", sixAvL: "L02N",
+  fm14: "D19N", bryantPk: "D16N", bway14: "R20N", timesSq: "R16N",
+};
+const MIN = 60;
+const WALK = {
+  toFm: 1.5 * MIN, toBway: 2.5 * MIN, fromBryantPk: 3 * MIN, fromTimesSq: 5.5 * MIN,
+};
+// Used only when a feed omits the downstream stop.
+const TYPICAL_RIDE = { unionSqTo6Av: 1.6 * MIN, fm14ToBryantPk: 4.9 * MIN, bway14ToTimesSq: 5.1 * MIN };
+const BWAY_MUST_WIN_BY = 0.5 * MIN;
+const TRAINS_AHEAD = 4;
+// Rush-hour predictions sometimes put two L trains seconds apart; show them as one row.
+const SAME_TRAIN_WITHIN = 1 * MIN;
+const REFRESH_EVERY_MS = 30000;
+
+// ---- Minimal protobuf reader for GTFS-realtime (only the fields this page needs) ----
+function reader(buf) { return { buf, pos: 0, end: buf.length }; }
+function varint(r) {
+  let result = 0, scale = 1, byte;
+  do { byte = r.buf[r.pos++]; result += (byte & 0x7f) * scale; scale *= 128; } while (byte & 0x80);
+  return result;
+}
+function fields(buf, onField) {
+  const r = reader(buf);
+  while (r.pos < r.end) {
+    const key = varint(r), field = Math.floor(key / 8), wire = key & 7;
+    if (wire === 0) onField(field, varint(r));
+    else if (wire === 2) { const len = varint(r); onField(field, r.buf.subarray(r.pos, r.pos + len)); r.pos += len; }
+    else if (wire === 1) r.pos += 8;
+    else if (wire === 5) r.pos += 4;
+    else throw new Error("Unexpected protobuf wire type " + wire);
+  }
+}
+const text = (bytes) => new TextDecoder().decode(bytes);
+function stopEventTime(bytes) { let t = null; fields(bytes, (f, v) => { if (f === 2) t = v; }); return t; }
+
+function parseFeed(buf) {
+  let feedTime = null;
+  const trips = [];
+  fields(buf, (f, v) => {
+    if (f === 1) fields(v, (hf, hv) => { if (hf === 3) feedTime = hv; });
+    if (f !== 2) return;
+    fields(v, (ef, ev) => {
+      if (ef !== 3) return;
+      const trip = { id: "", route: "", stops: {} };
+      fields(ev, (tf, tv) => {
+        if (tf === 1) fields(tv, (df, dv) => { if (df === 1) trip.id = text(dv); if (df === 5) trip.route = text(dv); });
+        if (tf === 2) {
+          let stop = "", arr = null, dep = null;
+          fields(tv, (sf, sv) => {
+            if (sf === 2) arr = stopEventTime(sv);
+            if (sf === 3) dep = stopEventTime(sv);
+            if (sf === 4) stop = text(sv);
+          });
+          if (stop) trip.stops[stop] = { arr: arr ?? dep, dep: dep ?? arr };
+        }
+      });
+      trips.push(trip);
+    });
+  });
+  return { feedTime, trips };
+}
+
+async function loadFeed(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`MTA feed returned ${res.status}`);
+  return parseFeed(new Uint8Array(await res.arrayBuffer()));
+}
+
+// ---- Commute logic ----
+function bestConnection(trips, routes, boardStop, alightStop, readyAt, fallbackRide) {
+  const options = trips
+    .filter((t) => routes.includes(t.route) && t.stops[boardStop] && t.stops[boardStop].dep >= readyAt)
+    .map((t) => {
+      const dep = t.stops[boardStop].dep;
+      const arr = t.stops[alightStop]?.arr ?? dep + fallbackRide;
+      return { route: t.route, dep, arr };
+    })
+    .sort((a, b) => a.dep - b.dep)
+    .slice(0, TRAINS_AHEAD);
+  // A later express can beat an earlier local, so take the earliest arrival.
+  return options.reduce((best, o) => (!best || o.arr < best.arr ? o : best), null);
+}
+
+function planFor(lTrip, fmTrips, bwayTrips) {
+  const usq = lTrip.stops[STOP.unionSqL].arr;
+  const sixAv = lTrip.stops[STOP.sixAvL]?.arr ?? usq + TYPICAL_RIDE.unionSqTo6Av;
+  const fm = bestConnection(fmTrips, ["F", "M"], STOP.fm14, STOP.bryantPk, sixAv + WALK.toFm, TYPICAL_RIDE.fm14ToBryantPk);
+  const bway = bestConnection(bwayTrips, ["N", "Q", "R", "W"], STOP.bway14, STOP.timesSq, usq + WALK.toBway, TYPICAL_RIDE.bway14ToTimesSq);
+  const fmLobby = fm ? fm.arr + WALK.fromBryantPk : null;
+  const bwayLobby = bway ? bway.arr + WALK.fromTimesSq : null;
+  let choice = null;
+  if (fmLobby && bwayLobby) choice = bwayLobby < fmLobby - BWAY_MUST_WIN_BY ? "bway" : "fm";
+  else if (fmLobby) choice = "fm";
+  else if (bwayLobby) choice = "bway";
+  return {
+    id: lTrip.id, bedford: lTrip.stops[STOP.bedford]?.dep ?? null, usq,
+    fm, bway, fmLobby, bwayLobby, choice,
+  };
+}
+
+// ---- Rendering ----
+const $ = (id) => document.getElementById(id);
+const clock = (t) => new Date(t * 1000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+const clockSec = (t) => new Date(t * 1000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit" });
+const minsFrom = (t, now) => Math.max(0, Math.round((t - now) / MIN));
+const bullet = (route) => `<span class="b ${route}">${route}</span>`;
+
+let plans = [];
+let selectedId = null;
+
+function renderVerdict(p, now) {
+  $("compare").hidden = false;
+  const left = p.bedford && p.bedford > now ? `leaves Bedford ${clock(p.bedford)}` : `at Union Sq ${clock(p.usq)}`;
+  $("verdict-train").textContent = `Your L · ${left}`;
+  if (!p.choice) {
+    $("verdict-call").textContent = "No connecting trains in the feed";
+    $("verdict-why").textContent = "Neither the F/M nor the N/Q/R/W feed shows a train you could catch. Check the MTA app for service changes.";
+  } else {
+    const gap = Math.round(Math.abs((p.fmLobby ?? 0) - (p.bwayLobby ?? 0)) / MIN);
+    const both = p.fmLobby && p.bwayLobby;
+    if (p.choice === "bway") {
+      $("verdict-call").textContent = "Get off at Union Sq";
+      $("verdict-why").textContent = both ? `Broadway gets you to the lobby about ${gap} min sooner.` : "Only Broadway shows a train you can make.";
+    } else {
+      $("verdict-call").textContent = "Stay on to 6 Av";
+      $("verdict-why").textContent = !both ? "Only the F/M shows a train you can make."
+        : gap === 0 ? "It's a toss-up, and the F/M drops you at the building." : `The F/M gets you to the lobby about ${gap} min sooner.`;
+    }
+  }
+  const fill = (key, conn, lobby, boardName) => {
+    $(`opt-${key}`).classList.toggle("win", p.choice === key);
+    $(`${key}-lobby`).textContent = lobby ? clock(lobby) : "No train";
+    $(`${key}-detail`).innerHTML = conn
+      ? `${bullet(conn.route)} leaves ${boardName} ${clock(conn.dep)} (in ${minsFrom(conn.dep, now)} min)`
+      : "Nothing catchable in the feed";
+  };
+  fill("bway", p.bway, p.bwayLobby, "Union Sq");
+  fill("fm", p.fm, p.fmLobby, "14 St");
+}
+
+function renderList(now) {
+  $("list").innerHTML = plans.map((p) => {
+    const atBedford = p.bedford && p.bedford > now
+      ? `Bedford ${clock(p.bedford)}<small>in ${minsFrom(p.bedford, now)} min</small>`
+      : `Union Sq ${clock(p.usq)}<small>in ${minsFrom(p.usq, now)} min</small>`;
+    const pick = p.choice === "bway"
+      ? `${bullet("N")}${bullet("R")} Union Sq · ${clock(p.bwayLobby)}`
+      : p.choice === "fm" ? `${bullet("F")}${bullet("M")} 6 Av · ${clock(p.fmLobby)}` : "No connection";
+    return `<button type="button" class="row${p.id === selectedId ? " sel" : ""}" data-id="${p.id}">
+      ${bullet("L")}<span class="t">${atBedford}</span><span class="pick">${pick}</span></button>`;
+  }).join("");
+}
+
+function render(now) {
+  if (!plans.length) {
+    $("compare").hidden = true;
+    $("verdict-train").textContent = "No trains";
+    $("verdict-call").textContent = "No Manhattan-bound L in the feed";
+    $("verdict-why").textContent = "The L feed shows no train heading to Union Sq. Check the MTA app for service changes.";
+    $("list").innerHTML = "";
+    return;
+  }
+  if (!plans.some((p) => p.id === selectedId)) selectedId = plans[0].id;
+  renderVerdict(plans.find((p) => p.id === selectedId), now);
+  renderList(now);
+}
+
+$("list").addEventListener("click", (e) => {
+  const row = e.target.closest(".row");
+  if (!row) return;
+  selectedId = row.dataset.id;
+  render(Date.now() / 1000);
+});
+
+async function update() {
+  document.body.classList.add("loading");
+  try {
+    const [l, bdfm, nqrw] = await Promise.all([loadFeed(FEEDS.l), loadFeed(FEEDS.bdfm), loadFeed(FEEDS.nqrw)]);
+    const now = Date.now() / 1000;
+    const upcoming = l.trips
+      .filter((t) => t.route === "L" && t.stops[STOP.unionSqL] && t.stops[STOP.unionSqL].arr > now)
+      .sort((a, b) => a.stops[STOP.unionSqL].arr - b.stops[STOP.unionSqL].arr);
+    const distinct = [];
+    for (const t of upcoming) {
+      const prev = distinct[distinct.length - 1];
+      const tooClose = prev && t.stops[STOP.unionSqL].arr - prev.stops[STOP.unionSqL].arr < SAME_TRAIN_WITHIN;
+      if (!tooClose && !distinct.some((d) => d.id === t.id)) distinct.push(t);
+    }
+    plans = distinct.slice(0, 5).map((t) => planFor(t, bdfm.trips, nqrw.trips));
+    render(now);
+    const oldest = Math.min(l.feedTime, bdfm.feedTime, nqrw.feedTime);
+    $("stamp").textContent = `Updated ${clockSec(now)} · MTA data as of ${clockSec(oldest)}`;
+  } catch (err) {
+    $("stamp").innerHTML = `<span class="err">Couldn't reach the MTA feeds (${err.message}). Tap Refresh to try again.</span>`;
+  } finally {
+    document.body.classList.remove("loading");
+  }
+}
+
+$("refresh").addEventListener("click", update);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) update(); });
+setInterval(() => { if (!document.hidden) update(); }, REFRESH_EVERY_MS);
+update();
+</script>
+</body>
+</html>
