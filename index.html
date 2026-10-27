@@ -124,7 +124,7 @@ const FEEDS = {
   nqrw: "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw",
 };
 const STOP = {
-  bedford: "L08N", threeAvL: "L05N", unionSqL: "L03N", sixAvL: "L02N",
+  bedford: "L08N", unionSqL: "L03N", sixAvL: "L02N",
   fm14: "D19N", bryantPk: "D16N", bway14: "R20N", timesSq: "R16N",
 };
 const MIN = 60;
@@ -135,7 +135,7 @@ const WALK = {
 const TYPICAL_RIDE = { unionSqTo6Av: 1.6 * MIN, fm14ToBryantPk: 4.9 * MIN, bway14ToTimesSq: 5.1 * MIN };
 // Median run time from Bedford to each later stop, morning weekdays Sep-Oct 2026.
 // Ordered nearest first: a departed train's next stop gives the tightest estimate.
-const FROM_BEDFORD = [["L06N", 3.28 * MIN], ["L05N", 4.06 * MIN]];
+const FROM_BEDFORD = [["L06N", 3.28 * MIN], ["L05N", 4.06 * MIN], ["L03N", 5.77 * MIN], ["L02N", 7.4 * MIN]];
 const PAST_SHOWN = 2;
 const FUTURE_SHOWN = 3;
 // The feed drops a stop once the train passes it, so remember Bedford times we have seen.
@@ -235,16 +235,19 @@ function bedfordTime(lTrip, sixAv) {
   return { at: lTrip.stops[stop].arr - runTime, estimated: true };
 }
 
+// A departed train stays listed until 6 Av; past Union Sq the F/M is its only option.
 function sixAvArrival(lTrip) {
-  return lTrip.stops[STOP.sixAvL]?.arr ?? lTrip.stops[STOP.unionSqL].arr + TYPICAL_RIDE.unionSqTo6Av;
+  if (lTrip.stops[STOP.sixAvL]) return lTrip.stops[STOP.sixAvL].arr;
+  if (lTrip.stops[STOP.unionSqL]) return lTrip.stops[STOP.unionSqL].arr + TYPICAL_RIDE.unionSqTo6Av;
+  return null;
 }
 
 function planFor(lTrip, fmTrips, bwayTrips) {
-  const usq = lTrip.stops[STOP.unionSqL].arr;
+  const usq = lTrip.stops[STOP.unionSqL]?.arr ?? null;
   const sixAv = sixAvArrival(lTrip);
   const bedford = bedfordTime(lTrip, sixAv);
   const fm = bestConnection(fmTrips, ["F", "M"], STOP.fm14, STOP.bryantPk, sixAv + WALK.toFm, TYPICAL_RIDE.fm14ToBryantPk);
-  const bway = bestConnection(bwayTrips, ["N", "Q", "R", "W"], STOP.bway14, STOP.timesSq, usq + WALK.toBway, TYPICAL_RIDE.bway14ToTimesSq);
+  const bway = usq && bestConnection(bwayTrips, ["N", "Q", "R", "W"], STOP.bway14, STOP.timesSq, usq + WALK.toBway, TYPICAL_RIDE.bway14ToTimesSq);
   const fmLobby = fm ? fm.arr + WALK.fromBryantPk : null;
   const bwayLobby = bway ? bway.arr + WALK.fromTimesSq : null;
   let choice = null;
@@ -252,7 +255,7 @@ function planFor(lTrip, fmTrips, bwayTrips) {
   else if (fmLobby) choice = "fm";
   else if (bwayLobby) choice = "bway";
   return {
-    id: lTrip.id, bedford: bedford.at, bedfordEstimated: bedford.estimated, usq,
+    id: lTrip.id, bedford: bedford.at, bedfordEstimated: bedford.estimated, usq, sixAv, pastUnionSq: !usq,
     fm, bway, fmLobby, bwayLobby, choice,
   };
 }
@@ -281,7 +284,7 @@ function renderVerdict(p, now) {
       $("verdict-why").textContent = both ? `Broadway gets you to the lobby about ${gap} min sooner.` : "Only Broadway shows a train you can make.";
     } else {
       $("verdict-call").textContent = "Stay on to 6 Av";
-      $("verdict-why").textContent = !both ? "Only the F/M shows a train you can make."
+      $("verdict-why").textContent = p.pastUnionSq ? "Your train is already past Union Sq." : !both ? "Only the F/M shows a train you can make."
         : gap === 0 ? "It's a toss-up, and the F/M drops you at the building." : `The F/M gets you to the lobby about ${gap} min sooner.`;
     }
   }
@@ -290,7 +293,7 @@ function renderVerdict(p, now) {
     $(`${key}-lobby`).textContent = lobby ? clock(lobby) : "No train";
     $(`${key}-detail`).innerHTML = conn
       ? `${bullet(conn.route)} leaves ${boardName} ${clock(conn.dep)} (in ${minsFrom(conn.dep, now)} min)`
-      : "Nothing catchable in the feed";
+      : key === "bway" && p.pastUnionSq ? "Your train is past Union Sq" : "Nothing catchable in the feed";
   };
   fill("bway", p.bway, p.bwayLobby, "Union Sq");
   fill("fm", p.fm, p.fmLobby, "14 St");
@@ -306,7 +309,7 @@ function renderList(now) {
     const divider = !departed && (i === 0 || plans[i - 1].bedford <= now)
       ? `<div class="now"><span>Now ${clock(now)}</span></div>` : "";
     const atBedford = departed
-      ? `Left Bedford ${p.bedfordEstimated ? "~" : ""}${clockShort(p.bedford)}<small>Union Sq in ${minsFrom(p.usq, now)} min</small>`
+      ? `Left Bedford ${p.bedfordEstimated ? "~" : ""}${clockShort(p.bedford)}<small>${p.pastUnionSq ? `Past Union Sq · 6 Av in ${minsFrom(p.sixAv, now)} min` : `Union Sq in ${minsFrom(p.usq, now)} min`}</small>`
       : `Bedford ${clockShort(p.bedford)}<small>in ${minsFrom(p.bedford, now)} min</small>`;
     const pick = p.choice === "bway"
       ? `${bullet("N")}${bullet("R")} Union Sq · ${clockShort(p.bwayLobby)}`
@@ -346,13 +349,12 @@ async function update() {
     const [l, bdfm, nqrw] = await Promise.all([loadFeed(FEEDS.l), loadFeed(FEEDS.bdfm), loadFeed(FEEDS.nqrw)]);
     const now = Date.now() / 1000;
     const upcoming = l.trips
-      // Past trains stay listed until they reach 3 Av, while there is still time to check.
-      .filter((t) => t.route === "L" && t.stops[STOP.threeAvL] && t.stops[STOP.unionSqL])
-      .sort((a, b) => a.stops[STOP.unionSqL].arr - b.stops[STOP.unionSqL].arr);
+      .filter((t) => t.route === "L" && sixAvArrival(t) > now)
+      .sort((a, b) => sixAvArrival(a) - sixAvArrival(b));
     const distinct = [];
     for (const t of upcoming) {
       const prev = distinct[distinct.length - 1];
-      const tooClose = prev && t.stops[STOP.unionSqL].arr - prev.stops[STOP.unionSqL].arr < SAME_TRAIN_WITHIN;
+      const tooClose = prev && sixAvArrival(t) - sixAvArrival(prev) < SAME_TRAIN_WITHIN;
       if (!tooClose && !distinct.some((d) => d.id === t.id)) distinct.push(t);
     }
     rememberBedford(l.trips.filter((t) => t.route === "L"), now);
