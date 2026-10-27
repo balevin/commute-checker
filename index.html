@@ -124,7 +124,7 @@ const FEEDS = {
   nqrw: "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw",
 };
 const STOP = {
-  bedford: "L08N", unionSqL: "L03N", sixAvL: "L02N",
+  bedford: "L08N", threeAvL: "L05N", unionSqL: "L03N", sixAvL: "L02N",
   fm14: "D19N", bryantPk: "D16N", bway14: "R20N", timesSq: "R16N",
 };
 const MIN = 60;
@@ -135,13 +135,13 @@ const WALK = {
 const TYPICAL_RIDE = { unionSqTo6Av: 1.6 * MIN, fm14ToBryantPk: 4.9 * MIN, bway14ToTimesSq: 5.1 * MIN };
 // Median run time from Bedford to each later stop, morning weekdays Sep-Oct 2026.
 // Ordered nearest first: a departed train's next stop gives the tightest estimate.
-const FROM_BEDFORD = [["L06N", 3.28 * MIN], ["L05N", 4.06 * MIN], ["L03N", 5.77 * MIN]];
+const FROM_BEDFORD = [["L06N", 3.28 * MIN], ["L05N", 4.06 * MIN]];
 const PAST_SHOWN = 2;
 const FUTURE_SHOWN = 3;
 // The feed drops a stop once the train passes it, so remember Bedford times we have seen.
 const SEEN_KEY = "bedford-departures";
 const SEEN_KEEP = 3 * 60 * MIN;
-const PLAUSIBLE_BEDFORD_TO_USQ = [3 * MIN, 15 * MIN];
+const PLAUSIBLE_BEDFORD_TO_6AV = [4 * MIN, 18 * MIN];
 const BWAY_MUST_WIN_BY = 0.5 * MIN;
 const TRAINS_AHEAD = 4;
 // Rush-hour predictions sometimes put two L trains seconds apart; show them as one row.
@@ -226,19 +226,23 @@ function rememberBedford(lTrips, now) {
   for (const id of Object.keys(seenBedford)) if (seenBedford[id] < now - SEEN_KEEP) delete seenBedford[id];
   try { localStorage.setItem(SEEN_KEY, JSON.stringify(seenBedford)); } catch { /* private mode: memory only */ }
 }
-function bedfordTime(lTrip, usq) {
+function bedfordTime(lTrip, sixAv) {
   if (lTrip.stops[STOP.bedford]) return { at: lTrip.stops[STOP.bedford].dep, estimated: false };
   const seen = seenBedford[lTrip.id];
-  const [lo, hi] = PLAUSIBLE_BEDFORD_TO_USQ;
-  if (seen && usq - seen >= lo && usq - seen <= hi) return { at: seen, estimated: false };
+  const [lo, hi] = PLAUSIBLE_BEDFORD_TO_6AV;
+  if (seen && sixAv - seen >= lo && sixAv - seen <= hi) return { at: seen, estimated: false };
   const [stop, runTime] = FROM_BEDFORD.find(([s]) => lTrip.stops[s]);
   return { at: lTrip.stops[stop].arr - runTime, estimated: true };
 }
 
+function sixAvArrival(lTrip) {
+  return lTrip.stops[STOP.sixAvL]?.arr ?? lTrip.stops[STOP.unionSqL].arr + TYPICAL_RIDE.unionSqTo6Av;
+}
+
 function planFor(lTrip, fmTrips, bwayTrips) {
   const usq = lTrip.stops[STOP.unionSqL].arr;
-  const bedford = bedfordTime(lTrip, usq);
-  const sixAv = lTrip.stops[STOP.sixAvL]?.arr ?? usq + TYPICAL_RIDE.unionSqTo6Av;
+  const sixAv = sixAvArrival(lTrip);
+  const bedford = bedfordTime(lTrip, sixAv);
   const fm = bestConnection(fmTrips, ["F", "M"], STOP.fm14, STOP.bryantPk, sixAv + WALK.toFm, TYPICAL_RIDE.fm14ToBryantPk);
   const bway = bestConnection(bwayTrips, ["N", "Q", "R", "W"], STOP.bway14, STOP.timesSq, usq + WALK.toBway, TYPICAL_RIDE.bway14ToTimesSq);
   const fmLobby = fm ? fm.arr + WALK.fromBryantPk : null;
@@ -317,7 +321,7 @@ function render(now) {
     $("compare").hidden = true;
     $("verdict-train").textContent = "No trains";
     $("verdict-call").textContent = "No Manhattan-bound L in the feed";
-    $("verdict-why").textContent = "The L feed shows no train heading to Union Sq. Check the MTA app for service changes.";
+    $("verdict-why").textContent = "The L feed shows no train heading into Manhattan. Check the MTA app for service changes.";
     $("list").innerHTML = "";
     return;
   }
@@ -342,7 +346,8 @@ async function update() {
     const [l, bdfm, nqrw] = await Promise.all([loadFeed(FEEDS.l), loadFeed(FEEDS.bdfm), loadFeed(FEEDS.nqrw)]);
     const now = Date.now() / 1000;
     const upcoming = l.trips
-      .filter((t) => t.route === "L" && t.stops[STOP.unionSqL] && t.stops[STOP.unionSqL].arr > now)
+      // Past trains stay listed until they reach 3 Av, while there is still time to check.
+      .filter((t) => t.route === "L" && t.stops[STOP.threeAvL] && t.stops[STOP.unionSqL])
       .sort((a, b) => a.stops[STOP.unionSqL].arr - b.stops[STOP.unionSqL].arr);
     const distinct = [];
     for (const t of upcoming) {
